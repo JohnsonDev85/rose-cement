@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title> Sales Report System</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="loginSection" class="login-wrapper">
+    <div class="login-box">
+      <h2>RoseCement.Co.ltd Sales Data</h2>
+      <p>Ingiza Password Yako </p>
+      <div id="errorMsg" class="error-msg"></div>
+      <div class="input-group">
+        <input type="password" id="password" placeholder="Password">
+      </div>
+      <button id="loginBtn">Login</button>
+    </div>
+    <footer>
+    <p>&copy; 2026 JohnsonDev85.All rights reserved!</p>
+    <p>Built by JohnsonDev85</p>
+    <p>Email: <a id="email" href="mailto:jyona0607@gmail.com">jyona0607@gmail.com</a></p>   
+  </footer>
+  </div>
+
+  <div id="supervisorDashboard" class="dashboard-view">
+    <header class="supervisor-header">
+      <h1 id="supPageTitle">Supervisor </h1>
+      <div class="month-select">
+        <label for="supMonthPicker">Month:</label>
+        <input type="month" id="supMonthPicker">
+      </div>
+      <button id="supLogoutBtn">Logout</button>
+    </header>
+
+    <main class="container supervisor-container">
+      <div class="card">
+        <h2> Add New Sales!</h2>
+        <div class="form-grid">
+          <div>
+            <label for="saleDate">Tarehe</label>
+            <input type="date" id="saleDate">
+          </div>
+          <div>
+            <label for="customerName">Jina</label>
+            <input type="text" id="customerName">
+          </div>
+          <div>
+            <label for="vehicleNumber">Namba ya Gari *</label>
+            <input type="text" id="vehicleNumber" >
+          </div>
+          <div>
+            <label for="trailerNumber">Namba ya Trailer *</label>
+            <input type="text" id="trailerNumber" >
+          </div>
+          <div>
+            <label for="bags">Bags</label>
+            <input type="number" id="bags" min="1" >
+          </div>
+          <div>
+            <label for="totalPrice">Total Price</label>
+            <input type="text" id="totalPrice" readonly value="0">
+          </div>
+          <div>
+            <label for="amountPaid">Paid</label>
+            <input type="text" inputmode="numeric" id="amountPaid" min="0" >
+          </div>
+          <div>
+            <label for="balance">Balance</label>
+            <input type="text" id="balance" readonly value="0">
+          </div>
+          <div>
+            <label for="receiptFile">Upload Receipt Picture </label>
+            <input type="file" id="receiptFile" accept="image/*">
+          </div>
+        </div>
+        <button class="submit-btn" id="submitSaleBtn">Save  Data</button>
+        <p class="status-msg" id="saleStatusMsg"></p>
+      </div>
+
+      <div class="card">
+        <h2 id="supSalesTableTitle">Mauzo ya Mwezi</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Jina</th><th>Namba ya Gari</th><th>Namba ya Trailer</th>
+                <th>Bags</th><th>Total</th><th>Paid</th><th>Balance</th><th>Receipt</th><th>Supervisor Bonus</th><th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="supSalesTableBody"></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4">TOTAL</td>
+                <td id="supSumBags">0</td>
+                <td id="supSumTotal">0</td>
+                <td id="supSumPaid">0</td>
+                <td id="supSumBalance">0</td>
+                <td></td>
+                <td id="supSumBonus">0</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="balance-summary">
+          <div class="balance-box">
+            <div class="label">Total Balance</div>
+            <div class="value" id="supBalanceJuu">TZS 0</div>
+          </div>
+          <div class="balance-box">
+            <div class="label">Total Bonus</div>
+            <div class="value" id="supBonusJuu">TZS 0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2> Rose  Matumizi</h2>
+        <div class="form-grid">
+          <div>
+            <label for="expenseDesc">Maelezo ya Matumizi</label>
+            <input type="text" id="expenseDesc">
+          </div>
+          <div>
+            <label for="expenseAmount">Amount</label>
+            <input type="number" id="expenseAmount" min="0">
+          </div>
+        </div>
+        <button class="submit-btn" id="submitExpenseBtn">Ongeza Matumizi</button>
+        <p class="status-msg" id="expenseStatusMsg"></p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Description</th><th>Amount</th><th>Action</th></tr></thead>
+            <tbody id="supExpensesTableBody"></tbody>
+            <tfoot><tr><td>JUMLA MATUMIZI</td><td id="supSumExpenses">0</td><td></td></tr></tfoot>
+          </table>
+        </div>
+
+        <div class="balance-summary">
+          <div class="balance-box final">
+            <div class="label">BALANCE KUU (Baada ya Matumizi)</div>
+            <div class="value" id="supBalanceKuu">TZS 0</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="managerDashboard" class="dashboard-view">
+    <header class="manager-header">
+      <h1 id="mngrPageTitle">Manager</h1>
+      <div class="month-select">
+        <label for="mngrMonthPicker">Month:</label>
+        <input type="month" id="mngrMonthPicker">
+      </div>
+      <button id="mngrLogoutBtn">Logout</button>
+    </header>
+
+    <main class="container manager-container">
+      <div class="card">
+        <h2> Summary ya Mauzo kwa Wiki</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Wiki</th><th>Idadi ya Gari</th><th>Jumla Ya Bags</th><th>Total (TZS)</th><th>Total Paid</th><th>Total Balance</th></tr>
+            </thead>
+            <tbody id="weeklyTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 id="mngrSalesTableTitle">Sales Records</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Jina</th><th> Namba ya Gari</th><th>Trailer</th>
+                <th>Bags</th><th>Total</th><th>Paid</th><th>Balance</th><th>Receipt</th><th>Supervisor Bonus</th>
+              </tr>
+            </thead>
+            <tbody id="mngrSalesTableBody"></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4">TOTAL</td>
+                <td id="mngrSumBags">0</td>
+                <td id="mngrSumTotal">0</td>
+                <td id="mngrSumPaid">0</td>
+                <td id="mngrSumBalance">0</td>
+                <td></td>
+                <td id="mngrSumBonus">0</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="balance-summary">
+          <div class="balance-box">
+            <div class="label">Total Balance</div>
+            <div class="value" id="mngrBalanceJuu">TZS 0</div>
+          </div>
+          <div class="balance-box">
+            <div class="label">Total Supervisor Bonus</div>
+            <div class="value" id="mngrBonusJuu">TZS 0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Matumizi  Rose</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Description</th><th>Amount</th></tr></thead>
+            <tbody id="mngrExpensesTableBody"></tbody>
+            <tfoot><tr><td>Total Matumizi</td><td id="mngrSumExpenses">0</td></tr></tfoot>
+          </table>
+        </div>
+        <div class="balance-summary">
+          <div class="balance-box final">
+            <div class="label">BALANCE KUU (Baada ya Matumizi)</div>
+            <div class="value" id="mngrBalanceKuu">TZS 0</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  
+  <script src="script.js"></script>
+</body>
+  
+</html>
