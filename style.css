@@ -395,3 +395,12 @@ footer a{
 footer a:hover{
   color: lightblue;
 }
+.credit-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.credit-check-row button {
+  padding: 4px 10px;
+  cursor: pointer;
+}
