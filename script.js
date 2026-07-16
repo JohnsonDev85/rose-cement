@@ -39,16 +39,6 @@ let supLastSumExpenses = 0;
 let mngrLastSumBalance = 0;
 let mngrLastSumExpenses = 0;
 
-// ================= CUSTOMER CREDIT STATE =================
-let availableCredit = 0;      // Credit ya sasa iliyopo kwa mteja aliyeangaliwa
-let currentCreditKey = null;  // Firestore doc id ya customerCredits kwa mteja huyo
-
-// Hutengeneza kitambulisho cha kipekee cha mteja: Jina + Namba ya Gari
-function getCustomerKey(name, vehicle) {
-  return (String(name).trim().toLowerCase() + '_' + String(vehicle).trim().toLowerCase())
-    .replace(/\s+/g, '-');
-}
-
 const loginSection = document.getElementById('loginSection');
 const loginBtn = document.getElementById('loginBtn');
 const errorMsg = document.getElementById('errorMsg');
@@ -69,7 +59,6 @@ const expenseStatusMsg = document.getElementById('expenseStatusMsg');
 
 const customerCreditDisplay = document.getElementById('customerCreditDisplay');
 const checkCreditBtn = document.getElementById('checkCreditBtn');
-const creditToUseInput = document.getElementById('creditToUse');
 
 const mngrMonthPicker = document.getElementById('mngrMonthPicker');
 
@@ -160,7 +149,7 @@ async function doLogin() {
     showError('Password si sahihi. Jaribu tena.');
   } catch (err) {
     console.error("Firebase Login Error:", err);
-    showError('Connection Error. Check your Internet connection.');
+    showError('Connection Error. Angalia connection yako.');
   } finally {
     loginBtn.disabled = false;
     loginBtn.textContent = 'Login';
@@ -195,8 +184,7 @@ function recalc() {
   const total = bags * PRICE_PER_BAG;
   totalPriceInput.value = total.toLocaleString();
   const paid = parseFloat(amountPaidInput.value.replace(/,/g, '')) || 0;
-  const creditUsed = parseFloat((creditToUseInput ? creditToUseInput.value : '0').replace(/,/g, '')) || 0;
-  const balance = (paid + creditUsed) - total;
+  const balance = paid - total;
   balanceInput.value = balance.toLocaleString();
 }
 if (bagsInput) bagsInput.addEventListener('input', recalc);
@@ -213,37 +201,36 @@ if (amountPaidInput) {
   });
 }
 
-// ================= CUSTOMER CREDIT: ANGALIA + TUMIA =================
-
+// ================= ANGALIA CREDIT/BALANCE YA MTEJA (LIVE, KUTOKA HISTORIA YA MAUZO) =================
+// Hakuna collection ya ziada - tunachukua mauzo yote ya nyuma ya mteja huyu (Jina + Namba ya Gari)
+// na kujumlisha balance zake (paid - total). Jumla chanya = ana credit. Jumla hasi = anadaiwa.
 async function checkCustomerCredit() {
   const name = document.getElementById('customerName').value.trim();
   const vehicle = document.getElementById('vehicleNumber').value.trim();
 
   if (!name || !vehicle) {
-    alert('Jaza Jina na Namba ya Gari kwanza, kisha bonyeza View.');
+    alert('Jaza Jina na Namba ya Gari kwanza, kisha Click View.');
     return;
   }
-
-  currentCreditKey = getCustomerKey(name, vehicle);
 
   checkCreditBtn.disabled = true;
   checkCreditBtn.textContent = '...';
 
   try {
-    const doc = await db.collection('customerCredits').doc(currentCreditKey).get();
-    availableCredit = doc.exists ? (doc.data().creditBalance || 0) : 0;
-    customerCreditDisplay.textContent = 'TZS ' + availableCredit.toLocaleString();
+    const snap = await db.collection('sales')
+      .where('customerName', '==', name)
+      .where('vehicleNumber', '==', vehicle)
+      .get();
 
-    // Kama credit iliyowekwa kwenye input inazidi ile mpya iliyopatikana, ipunguze
-    const currentEntered = parseFloat((creditToUseInput.value || '0').replace(/,/g, '')) || 0;
-    if (currentEntered > availableCredit) {
-      creditToUseInput.value = availableCredit === 0 ? '' : availableCredit.toLocaleString();
-      recalc();
-    }
+    let sumBalance = 0;
+    snap.forEach(doc => {
+      sumBalance += doc.data().balance || 0;
+    });
+
+    customerCreditDisplay.textContent = 'TZS ' + sumBalance.toLocaleString();
   } catch (err) {
     console.error(err);
     customerCreditDisplay.textContent = 'Error';
-    availableCredit = 0;
   } finally {
     checkCreditBtn.disabled = false;
     checkCreditBtn.textContent = 'View';
@@ -251,21 +238,8 @@ async function checkCustomerCredit() {
 }
 if (checkCreditBtn) checkCreditBtn.addEventListener('click', checkCustomerCredit);
 
-if (creditToUseInput) {
-  creditToUseInput.addEventListener('input', () => {
-    let digitsOnly = creditToUseInput.value.replace(/[^0-9]/g, '');
-    let val = digitsOnly === '' ? 0 : parseInt(digitsOnly, 10);
-    if (val > availableCredit) val = availableCredit; // usizidi kilichopo
-    creditToUseInput.value = val === 0 ? '' : val.toLocaleString();
-    recalc();
-  });
-}
-
 function resetCreditUI() {
-  availableCredit = 0;
-  currentCreditKey = null;
   if (customerCreditDisplay) customerCreditDisplay.textContent = 'TZS 0';
-  if (creditToUseInput) creditToUseInput.value = '';
 }
 
 async function uploadToCloudinary(file) {
@@ -288,7 +262,6 @@ if (submitSaleBtn) {
     const trailerNumber = document.getElementById('trailerNumber').value.trim();
     const bags = parseFloat(bagsInput.value) || 0;
     const amountPaid = parseFloat(amountPaidInput.value.replace(/,/g, '')) || 0;
-    const creditUsed = parseFloat((creditToUseInput.value || '0').replace(/,/g, '')) || 0;
     const receiptFile = document.getElementById('receiptFile').files[0];
 
     saleStatusMsg.textContent = '';
@@ -306,38 +279,16 @@ if (submitSaleBtn) {
     try {
       const receiptUrl = await uploadToCloudinary(receiptFile);
       const total = bags * PRICE_PER_BAG;
-      const balance = (amountPaid + creditUsed) - total;
+      const balance = amountPaid - total;
       const month = date.substring(0,7);
-      const customerKey = getCustomerKey(customerName, vehicleNumber);
 
       submitSaleBtn.textContent = 'Saving...';
 
-      // Transaction: soma credit halisi ya sasa (kuzuia mgongano wa mauzo mawili
-      // ya mteja mmoja yakitumwa karibu wakati mmoja), andika sale, sasisha credit.
-      await db.runTransaction(async (tx) => {
-        const creditRef = db.collection('customerCredits').doc(customerKey);
-        const creditSnap = await tx.get(creditRef);
-        const currentCredit = creditSnap.exists ? (creditSnap.data().creditBalance || 0) : 0;
-
-        if (creditUsed > currentCredit) {
-          throw new Error('Credit uliyoweka inazidi kiasi kilichopo kwenye mfumo. Bonyeza "View" upya.');
-        }
-
-        const newCreditBalance = currentCredit - creditUsed + (balance > 0 ? balance : 0);
-
-        const saleRef = db.collection('sales').doc();
-        tx.set(saleRef, {
-          date, customerName, vehicleNumber, trailerNumber,
-          bags, totalPrice: total, amountPaid, creditUsed, balance,
-          receiptUrl, month,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-
-        tx.set(creditRef, {
-          customerName, vehicleNumber,
-          creditBalance: newCreditBalance,
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+      await db.collection('sales').add({
+        date, customerName, vehicleNumber, trailerNumber,
+        bags, totalPrice: total, amountPaid, balance,
+        receiptUrl, month,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
 
       saleStatusMsg.textContent = 'Records are saved successifully!';
@@ -356,7 +307,7 @@ if (submitSaleBtn) {
 
     } catch (err) {
       console.error(err);
-      saleStatusMsg.textContent = 'Error: ' + err.message;
+      saleStatusMsg.textContent = 'Hitilafu: ' + err.message;
       saleStatusMsg.classList.add('error');
     } finally {
       submitSaleBtn.disabled = false;
@@ -373,7 +324,7 @@ async function loadSupervisorData() {
 async function loadSupSales() {
   const tbody = document.getElementById('supSalesTableBody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="12">Download...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11">Download...</td></tr>';
 
   const snap = await db.collection('sales').where('month', '==', supMonthPicker.value).orderBy('date').get();
   const docs = snap.docs;
@@ -385,18 +336,17 @@ async function loadSupSales() {
   });
   const bonusRate = getBonusRate(sumBags);
 
-  let sumTotal=0, sumPaid=0, sumCreditUsed=0, sumBalance=0, sumBonus=0;
+  let sumTotal=0, sumPaid=0, sumBalance=0, sumBonus=0;
   tbody.innerHTML = '';
 
   if (docs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12">Hakuna rekodi kwa mwezi huu.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11">Hakuna rekodi kwa mwezi huu.</td></tr>';
   }
 
   docs.forEach(doc => {
     const d = doc.data();
     sumTotal += d.totalPrice || 0;
     sumPaid += d.amountPaid || 0;
-    sumCreditUsed += d.creditUsed || 0;
     sumBalance += d.balance || 0;
     const rowBonus = (d.bags || 0) * bonusRate;
     sumBonus += rowBonus;
@@ -410,7 +360,6 @@ async function loadSupSales() {
        '<td>' + d.bags + '</td>' +
        '<td>' + (d.totalPrice||0).toLocaleString() + '</td>' +
        '<td>' + (d.amountPaid||0).toLocaleString() + '</td>' +
-       '<td>' + (d.creditUsed||0).toLocaleString() + '</td>' +
        '<td>' + (d.balance||0).toLocaleString() + '</td>' +
        '<td><a class="receipt-link" href="' + d.receiptUrl + '" target="_blank">View receipt</a></td>' +
        '<td>' + rowBonus.toLocaleString() + '</td>' +
@@ -421,7 +370,6 @@ async function loadSupSales() {
   document.getElementById('supSumBags').textContent = sumBags.toLocaleString();
   document.getElementById('supSumTotal').textContent = sumTotal.toLocaleString();
   document.getElementById('supSumPaid').textContent = sumPaid.toLocaleString();
-  document.getElementById('supSumCreditUsed').textContent = sumCreditUsed.toLocaleString();
   document.getElementById('supSumBalance').textContent = sumBalance.toLocaleString();
   document.getElementById('supSumBonus').textContent = sumBonus.toLocaleString();
   document.getElementById('supBalanceJuu').textContent = 'TZS ' + sumBalance.toLocaleString();
@@ -544,7 +492,7 @@ async function loadManagerData() {
 async function loadMngrSales() {
   const tbody = document.getElementById('mngrSalesTableBody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="11">Uploading...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="10">Uploading...</td></tr>';
 
   const snap = await db.collection('sales').where('month', '==', mngrMonthPicker.value).orderBy('date').get();
   const docs = snap.docs;
@@ -556,7 +504,7 @@ async function loadMngrSales() {
   });
   const bonusRate = getBonusRate(sumBags);
 
-  let sumTotal=0, sumPaid=0, sumCreditUsed=0, sumBalance=0, sumBonus=0;
+  let sumTotal=0, sumPaid=0, sumBalance=0, sumBonus=0;
   
   const weeklyData = {
     1:{count:0,bags:0,total:0,paid:0,balance:0},
@@ -568,14 +516,13 @@ async function loadMngrSales() {
 
   tbody.innerHTML = '';
   if (docs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11">Hakuna rekodi kwa mwezi huu.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10">Hakuna rekodi kwa mwezi huu.</td></tr>';
   }
 
   docs.forEach(doc => {
     const d = doc.data();
     sumTotal += d.totalPrice || 0;
     sumPaid += d.amountPaid || 0;
-    sumCreditUsed += d.creditUsed || 0;
     sumBalance += d.balance || 0;
     const rowBonus = (d.bags || 0) * bonusRate;
     sumBonus += rowBonus;
@@ -597,7 +544,6 @@ async function loadMngrSales() {
        '<td>' + d.bags + '</td>' +
        '<td>' + (d.totalPrice||0).toLocaleString() + '</td>' +
        '<td>' + (d.amountPaid||0).toLocaleString() + '</td>' +
-       '<td>' + (d.creditUsed||0).toLocaleString() + '</td>' +
        '<td>' + (d.balance||0).toLocaleString() + '</td>' +
        '<td><a class="receipt-link" href="' + d.receiptUrl + '" target="_blank">View receipt</a></td>' +
        '<td>' + rowBonus.toLocaleString() + '</td>';
@@ -607,7 +553,6 @@ async function loadMngrSales() {
   document.getElementById('mngrSumBags').textContent = sumBags.toLocaleString();
   document.getElementById('mngrSumTotal').textContent = sumTotal.toLocaleString();
   document.getElementById('mngrSumPaid').textContent = sumPaid.toLocaleString();
-  document.getElementById('mngrSumCreditUsed').textContent = sumCreditUsed.toLocaleString();
   document.getElementById('mngrSumBalance').textContent = sumBalance.toLocaleString();
   document.getElementById('mngrSumBonus').textContent = sumBonus.toLocaleString();
   document.getElementById('mngrBalanceJuu').textContent = 'TZS ' + sumBalance.toLocaleString();
