@@ -202,14 +202,13 @@ if (amountPaidInput) {
 }
 
 // ================= ANGALIA CREDIT/BALANCE YA MTEJA (LIVE, KUTOKA HISTORIA YA MAUZO) =================
-// Hakuna collection ya ziada - tunachukua mauzo yote ya nyuma ya mteja huyu (Jina + Namba ya Gari)
+// Hakuna collection ya ziada - tunachukua mauzo yote ya nyuma ya mteja huyu (kwa Jina, exact match)
 // na kujumlisha balance zake (paid - total). Jumla chanya = ana credit. Jumla hasi = anadaiwa.
 async function checkCustomerCredit() {
   const name = document.getElementById('customerName').value.trim();
-  const vehicle = document.getElementById('vehicleNumber').value.trim();
 
-  if (!name || !vehicle) {
-    alert('Jaza Jina na Namba ya Gari kwanza, kisha Click View.');
+  if (!name) {
+    alert('Jaza Jina la Mteja kwanza, kisha Click View.');
     return;
   }
 
@@ -219,7 +218,6 @@ async function checkCustomerCredit() {
   try {
     const snap = await db.collection('sales')
       .where('customerName', '==', name)
-      .where('vehicleNumber', '==', vehicle)
       .get();
 
     let sumBalance = 0;
@@ -307,7 +305,7 @@ if (submitSaleBtn) {
 
     } catch (err) {
       console.error(err);
-      saleStatusMsg.textContent = 'Hitilafu: ' + err.message;
+      saleStatusMsg.textContent = 'error: ' + err.message;
       saleStatusMsg.classList.add('error');
     } finally {
       submitSaleBtn.disabled = false;
