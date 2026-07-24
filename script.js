@@ -370,7 +370,6 @@ async function loadSupSales() {
   document.getElementById('supSumPaid').textContent = sumPaid.toLocaleString();
   document.getElementById('supSumBalance').textContent = sumBalance.toLocaleString();
   document.getElementById('supSumBonus').textContent = sumBonus.toLocaleString();
-  document.getElementById('supBalanceJuu').textContent = 'TZS ' + sumBalance.toLocaleString();
 
   // Total Bonus box: 0 mpaka jumla ya bags ifike 3000
   const totalBonusDisplay = (sumBags >= BONUS_THRESHOLD_1) ? sumBonus : 0;
@@ -465,6 +464,9 @@ function updateSupBalanceKuu(sumBalance, sumExpenses) {
   const kuu = supLastSumBalance - supLastSumExpenses;
   const el = document.getElementById('supBalanceKuu');
   if (el) el.textContent = 'TZS ' + kuu.toLocaleString();
+  // Balance (Juu) sasa i-function sawa na Balance Kuu - namba ile ile
+  const elJuu = document.getElementById('supBalanceJuu');
+  if (elJuu) elJuu.textContent = 'TZS ' + kuu.toLocaleString();
 }
 
 function refreshMngrTitles() {
@@ -553,7 +555,6 @@ async function loadMngrSales() {
   document.getElementById('mngrSumPaid').textContent = sumPaid.toLocaleString();
   document.getElementById('mngrSumBalance').textContent = sumBalance.toLocaleString();
   document.getElementById('mngrSumBonus').textContent = sumBonus.toLocaleString();
-  document.getElementById('mngrBalanceJuu').textContent = 'TZS ' + sumBalance.toLocaleString();
 
   // Total Bonus box: 0 mpaka jumla ya bags ifike 3000
   const totalBonusDisplay = (sumBags >= BONUS_THRESHOLD_1) ? sumBonus : 0;
@@ -612,6 +613,9 @@ function updateMngrBalanceKuu(sumBalance, sumExpenses) {
   const kuu = mngrLastSumBalance - mngrLastSumExpenses;
   const el = document.getElementById('mngrBalanceKuu');
   if (el) el.textContent = 'TZS ' + kuu.toLocaleString();
+  // Balance (Juu) sasa i-function sawa na Balance Kuu - namba ile ile
+  const elJuu = document.getElementById('mngrBalanceJuu');
+  if (elJuu) elJuu.textContent = 'TZS ' + kuu.toLocaleString();
 }
 
 const logoutHandler = () => {
