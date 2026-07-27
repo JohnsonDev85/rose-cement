@@ -13,6 +13,11 @@ if (!firebase.apps.length) {
 }
 const db = firebase.firestore();
 
+// Enable offline persistence/caching so repeat reads don't always hit the network
+db.enablePersistence().catch((err) => {
+  console.warn("Offline persistence haikuwezekana: ", err.code);
+});
+
 const CLOUD_NAME = "o8a7vquz";
 const UPLOAD_PRESET = "cement-receipt";
 const PRICE_PER_BAG = 15400;
@@ -38,6 +43,40 @@ let supLastSumBalance = 0;
 let supLastSumExpenses = 0;
 let mngrLastSumBalance = 0;
 let mngrLastSumExpenses = 0;
+
+// ================= PERFORMANCE CACHE (per month) =================
+// Sales/expenses ni sawa kwa Supervisor na Manager (collection moja), hivyo
+// tunacache kwa "month" bila kujali role - ikiisha muda (TTL) inasoma tena.
+const salesCache = {};     // month -> { docs, time }
+const expensesCache = {};  // month -> { docs, time }
+const DATA_CACHE_TTL_MS = 30000; // sekunde 30
+
+async function getSalesForMonth(month, forceRefresh) {
+  const cached = salesCache[month];
+  if (!forceRefresh && cached && (Date.now() - cached.time < DATA_CACHE_TTL_MS)) {
+    return cached.docs;
+  }
+  const snap = await db.collection('sales').where('month', '==', month).orderBy('date').get();
+  const docs = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+  salesCache[month] = { docs, time: Date.now() };
+  return docs;
+}
+
+async function getExpensesForMonth(month, forceRefresh) {
+  const cached = expensesCache[month];
+  if (!forceRefresh && cached && (Date.now() - cached.time < DATA_CACHE_TTL_MS)) {
+    return cached.docs;
+  }
+  const snap = await db.collection('expenses').where('month', '==', month).orderBy('createdAt').get();
+  const docs = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+  expensesCache[month] = { docs, time: Date.now() };
+  return docs;
+}
+
+function invalidateMonthCache(month) {
+  delete salesCache[month];
+  delete expensesCache[month];
+}
 
 const loginSection = document.getElementById('loginSection');
 const loginBtn = document.getElementById('loginBtn');
@@ -126,7 +165,12 @@ async function doLogin() {
   loginBtn.textContent = 'loading...';
 
   try {
-    const managerDoc = await db.collection('users').doc('manager').get();
+    // Soma "manager" na "supervisor" kwa pamoja (parallel) badala ya moja baada ya nyingine
+    const [managerDoc, supervisorDoc] = await Promise.all([
+      db.collection('users').doc('manager').get(),
+      db.collection('users').doc('supervisor').get()
+    ]);
+
     if (managerDoc.exists) {
       const dbPassword = String(managerDoc.data().password).trim();
       if (dbPassword === password) {
@@ -135,8 +179,7 @@ async function doLogin() {
         return;
       }
     }
-    
-    const supervisorDoc = await db.collection('users').doc('supervisor').get();
+
     if (supervisorDoc.exists) {
       const dbPassword = String(supervisorDoc.data().password).trim();
       if (dbPassword === password) {
@@ -145,7 +188,7 @@ async function doLogin() {
         return;
       }
     }
-    
+
     showError('Password si sahihi. Jaribu tena.');
   } catch (err) {
     console.error("Firebase Login Error:", err);
@@ -289,6 +332,8 @@ if (submitSaleBtn) {
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
 
+      invalidateMonthCache(month);
+
       saleStatusMsg.textContent = 'Records are saved successifully!';
       saleStatusMsg.classList.add('success');
 
@@ -315,8 +360,8 @@ if (submitSaleBtn) {
 }
 
 async function loadSupervisorData() {
-  await loadSupSales();
-  await loadSupExpenses();
+  // Sales na Expenses hazitegemeani - zisome kwa pamoja (parallel) badala ya moja baada ya nyingine
+  await Promise.all([loadSupSales(), loadSupExpenses()]);
 }
 
 async function loadSupSales() {
@@ -324,13 +369,13 @@ async function loadSupSales() {
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="11">Download...</td></tr>';
 
-  const snap = await db.collection('sales').where('month', '==', supMonthPicker.value).orderBy('date').get();
-  const docs = snap.docs;
+  const month = supMonthPicker.value;
+  const docs = await getSalesForMonth(month);
 
   // Pass 1: pata jumla ya bags kwanza, ili tujue rate ya bonus inayotumika
   let sumBags = 0;
   docs.forEach(doc => {
-    sumBags += doc.data().bags || 0;
+    sumBags += doc.data.bags || 0;
   });
   const bonusRate = getBonusRate(sumBags);
 
@@ -342,7 +387,7 @@ async function loadSupSales() {
   }
 
   docs.forEach(doc => {
-    const d = doc.data();
+    const d = doc.data;
     sumTotal += d.totalPrice || 0;
     sumPaid += d.amountPaid || 0;
     sumBalance += d.balance || 0;
@@ -381,6 +426,7 @@ async function loadSupSales() {
 window.deleteSale = async function(id) {
   if (!confirm('Are you sure you want to delete this record?')) return;
   await db.collection('sales').doc(id).delete();
+  invalidateMonthCache(supMonthPicker.value);
   loadSupervisorData();
 };
 
@@ -407,6 +453,8 @@ if (submitExpenseBtn) {
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
 
+      invalidateMonthCache(supMonthPicker.value);
+
       expenseStatusMsg.textContent = 'Expenses Saved!';
       expenseStatusMsg.classList.add('success');
 
@@ -429,16 +477,18 @@ async function loadSupExpenses() {
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="3">Uploading...</td></tr>';
 
-  const snap = await db.collection('expenses').where('month', '==', supMonthPicker.value).orderBy('createdAt').get();
+  const month = supMonthPicker.value;
+  const docs = await getExpensesForMonth(month);
+
   let sumExpenses = 0;
   tbody.innerHTML = '';
 
-  if (snap.empty) {
+  if (docs.length === 0) {
     tbody.innerHTML = '<tr><td colspan="3">Hakuna matumizi kwa mwezi huu.</td></tr>';
   }
 
-  snap.forEach(doc => {
-    const d = doc.data();
+  docs.forEach(doc => {
+    const d = doc.data;
     sumExpenses += d.amount || 0;
     const tr = document.createElement('tr');
     tr.innerHTML =
@@ -455,6 +505,7 @@ async function loadSupExpenses() {
 window.deleteExpense = async function(id) {
   if (!confirm('Are you sure you want to delete this expense?')) return;
   await db.collection('expenses').doc(id).delete();
+  invalidateMonthCache(supMonthPicker.value);
   loadSupervisorData();
 };
 
@@ -485,8 +536,8 @@ if (mngrMonthPicker) {
 }
 
 async function loadManagerData() {
-  await loadMngrSales();
-  await loadMngrExpenses();
+  // Sales na Expenses hazitegemeani - zisome kwa pamoja (parallel) badala ya moja baada ya nyingine
+  await Promise.all([loadMngrSales(), loadMngrExpenses()]);
 }
 
 async function loadMngrSales() {
@@ -494,13 +545,13 @@ async function loadMngrSales() {
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="10">Uploading...</td></tr>';
 
-  const snap = await db.collection('sales').where('month', '==', mngrMonthPicker.value).orderBy('date').get();
-  const docs = snap.docs;
+  const month = mngrMonthPicker.value;
+  const docs = await getSalesForMonth(month);
 
   // Pass 1: pata jumla ya bags kwanza, ili tujue rate ya bonus inayotumika
   let sumBags = 0;
   docs.forEach(doc => {
-    sumBags += doc.data().bags || 0;
+    sumBags += doc.data.bags || 0;
   });
   const bonusRate = getBonusRate(sumBags);
 
@@ -520,7 +571,7 @@ async function loadMngrSales() {
   }
 
   docs.forEach(doc => {
-    const d = doc.data();
+    const d = doc.data;
     sumTotal += d.totalPrice || 0;
     sumPaid += d.amountPaid || 0;
     sumBalance += d.balance || 0;
@@ -588,15 +639,17 @@ async function loadMngrExpenses() {
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="2">Uploading...</td></tr>';
 
-  const snap = await db.collection('expenses').where('month', '==', mngrMonthPicker.value).orderBy('createdAt').get();
+  const month = mngrMonthPicker.value;
+  const docs = await getExpensesForMonth(month);
+
   let sumExpenses = 0;
   tbody.innerHTML = '';
-  if (snap.empty) {
+  if (docs.length === 0) {
     tbody.innerHTML = '<tr><td colspan="2">Hakuna matumizi kwa mwezi huu.</td></tr>';
   }
 
-  snap.forEach(doc => {
-    const d = doc.data();
+  docs.forEach(doc => {
+    const d = doc.data;
     sumExpenses += d.amount || 0;
     const tr = document.createElement('tr');
     tr.innerHTML = '<td>' + d.description + '</td><td>' + (d.amount||0).toLocaleString() + '</td>';
