@@ -44,6 +44,10 @@ let supLastSumExpenses = 0;
 let mngrLastSumBalance = 0;
 let mngrLastSumExpenses = 0;
 
+// Balance iliyobaki kutoka mwezi uliopita (Opening Balance) - carry-forward
+let supOpeningBalance = 0;
+let mngrOpeningBalance = 0;
+
 // ================= PERFORMANCE CACHE (per month) =================
 // Sales/expenses ni sawa kwa Supervisor na Manager (collection moja), hivyo
 // tunacache kwa "month" bila kujali role - ikiisha muda (TTL) inasoma tena.
@@ -76,6 +80,75 @@ async function getExpensesForMonth(month, forceRefresh) {
 function invalidateMonthCache(month) {
   delete salesCache[month];
   delete expensesCache[month];
+}
+
+// ================= OPENING/CLOSING BALANCE (KUBEBA BALANCE KATI YA MIEZI) =================
+// Wazo: mwisho wa kila mwezi tunahifadhi "closingBalance" kwenye collection
+// "monthlyBalances" (doc moja tu kwa kila mwezi, mfano "2026-06").
+// Mwezi mpya unapofunguliwa, tunasoma closingBalance ya mwezi uliopita na
+// kuitumia kama Opening Balance ya mwezi huu.
+function getPreviousMonthStr(monthStr) {
+  const parts = monthStr.split('-');
+  let year = parseInt(parts[0], 10);
+  let month = parseInt(parts[1], 10);
+  month -= 1;
+  if (month < 1) { month = 12; year -= 1; }
+  return year + "-" + String(month).padStart(2, '0');
+}
+
+async function getOpeningBalance(month) {
+  const prevMonth = getPreviousMonthStr(month);
+  return await getOrComputeClosingBalance(prevMonth);
+}
+
+// Inarudisha closingBalance ya "month" husika. Kama haijahifadhiwa Firestore
+// (mfano miezi ya nyuma kabla utaratibu huu haujawepo), inaikokotoa moja kwa
+// moja kutoka kwenye sales/expenses halisi za mwezi huo (ikirudi nyuma zaidi
+// kama inahitajika), kisha kuihifadhi ili safari nyingine isome moja kwa moja.
+async function getOrComputeClosingBalance(month) {
+  try {
+    const doc = await db.collection('monthlyBalances').doc(month).get();
+    if (doc.exists) return doc.data().closingBalance || 0;
+  } catch (err) {
+    console.error('Imeshindikana kusoma closing balance:', err);
+  }
+
+  let salesDocs = [], expenseDocs = [];
+  try {
+    [salesDocs, expenseDocs] = await Promise.all([
+      getSalesForMonth(month),
+      getExpensesForMonth(month)
+    ]);
+  } catch (err) {
+    console.error('Imeshindikana kusoma sales/expenses za backfill:', err);
+    return 0;
+  }
+
+  // Hakuna rekodi kabisa kwa mwezi huu - hapa ndipo historia inaanzia, simama.
+  if (salesDocs.length === 0 && expenseDocs.length === 0) {
+    return 0;
+  }
+
+  let sumBalance = 0, sumExpenses = 0;
+  salesDocs.forEach(d => sumBalance += d.data.balance || 0);
+  expenseDocs.forEach(d => sumExpenses += d.data.amount || 0);
+
+  const prevOpening = await getOrComputeClosingBalance(getPreviousMonthStr(month));
+  const closing = prevOpening + sumBalance - sumExpenses;
+
+  await saveClosingBalance(month, closing);
+  return closing;
+}
+
+async function saveClosingBalance(month, closingBalance) {
+  try {
+    await db.collection('monthlyBalances').doc(month).set({
+      closingBalance,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (err) {
+    console.error('Imeshindikana kuhifadhi closing balance:', err);
+  }
 }
 
 const loginSection = document.getElementById('loginSection');
@@ -360,8 +433,17 @@ if (submitSaleBtn) {
 }
 
 async function loadSupervisorData() {
+  const month = supMonthPicker.value;
+  // Soma Opening Balance (balance iliyobaki mwezi uliopita) kabla ya kupakia sales/expenses
+  supOpeningBalance = await getOpeningBalance(month);
+
   // Sales na Expenses hazitegemeani - zisome kwa pamoja (parallel) badala ya moja baada ya nyingine
   await Promise.all([loadSupSales(), loadSupExpenses()]);
+
+  // Baada ya kujua sumBalance na sumExpenses za mwezi huu, hifadhi Closing Balance
+  // ili itumike kama Opening Balance ya mwezi ujao.
+  const closing = supOpeningBalance + supLastSumBalance - supLastSumExpenses;
+  await saveClosingBalance(month, closing);
 }
 
 async function loadSupSales() {
@@ -512,7 +594,8 @@ window.deleteExpense = async function(id) {
 function updateSupBalanceKuu(sumBalance, sumExpenses) {
   if (sumBalance !== null && sumBalance !== undefined) supLastSumBalance = sumBalance;
   if (sumExpenses !== null && sumExpenses !== undefined) supLastSumExpenses = sumExpenses;
-  const kuu = supLastSumBalance - supLastSumExpenses;
+  // Balance Kuu sasa inajumuisha Opening Balance ya mwezi uliopita
+  const kuu = supOpeningBalance + supLastSumBalance - supLastSumExpenses;
   const el = document.getElementById('supBalanceKuu');
   if (el) el.textContent = 'TZS ' + kuu.toLocaleString();
   // Balance (Juu) sasa i-function sawa na Balance Kuu - namba ile ile
@@ -536,8 +619,17 @@ if (mngrMonthPicker) {
 }
 
 async function loadManagerData() {
+  const month = mngrMonthPicker.value;
+  // Soma Opening Balance (balance iliyobaki mwezi uliopita) kabla ya kupakia sales/expenses
+  mngrOpeningBalance = await getOpeningBalance(month);
+
   // Sales na Expenses hazitegemeani - zisome kwa pamoja (parallel) badala ya moja baada ya nyingine
   await Promise.all([loadMngrSales(), loadMngrExpenses()]);
+
+  // Baada ya kujua sumBalance na sumExpenses za mwezi huu, hifadhi Closing Balance
+  // ili itumike kama Opening Balance ya mwezi ujao.
+  const closing = mngrOpeningBalance + mngrLastSumBalance - mngrLastSumExpenses;
+  await saveClosingBalance(month, closing);
 }
 
 async function loadMngrSales() {
@@ -663,7 +755,8 @@ async function loadMngrExpenses() {
 function updateMngrBalanceKuu(sumBalance, sumExpenses) {
   if (sumBalance !== null && sumBalance !== undefined) mngrLastSumBalance = sumBalance;
   if (sumExpenses !== null && sumExpenses !== undefined) mngrLastSumExpenses = sumExpenses;
-  const kuu = mngrLastSumBalance - mngrLastSumExpenses;
+  // Balance Kuu sasa inajumuisha Opening Balance ya mwezi uliopita
+  const kuu = mngrOpeningBalance + mngrLastSumBalance - mngrLastSumExpenses;
   const el = document.getElementById('mngrBalanceKuu');
   if (el) el.textContent = 'TZS ' + kuu.toLocaleString();
   // Balance (Juu) sasa i-function sawa na Balance Kuu - namba ile ile
