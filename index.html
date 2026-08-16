@@ -75,6 +75,7 @@
             <select id="paymentSource">
               <option value="cash">Fedha Taslimu</option>
               <option value="balance">Balance ya Supervisor</option>
+              <option value="combo">Fedha Taslimu + Balance ya Supervisor</option>
             </select>
           </div>
           <div id="balanceInfoBox" style="display:none;">
@@ -82,6 +83,10 @@
             <div class="credit-check-row">
               <span id="balCurrentAmount">TZS 0</span>
             </div>
+          </div>
+          <div id="comboAmountBox" style="display:none;">
+            <label for="balanceAmountUsed">Kiasi kutoka Balance ya Supervisor</label>
+            <input type="text" inputmode="numeric" id="balanceAmountUsed" placeholder="Mfano: 50000">
           </div>
           <div>
             <label for="amountPaid">Paid</label>
