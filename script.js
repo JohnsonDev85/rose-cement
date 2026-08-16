@@ -83,10 +83,6 @@ function invalidateMonthCache(month) {
 }
 
 // ================= OPENING/CLOSING BALANCE (KUBEBA BALANCE KATI YA MIEZI) =================
-// Wazo: mwisho wa kila mwezi tunahifadhi "closingBalance" kwenye collection
-// "monthlyBalances" (doc moja tu kwa kila mwezi, mfano "2026-06").
-// Mwezi mpya unapofunguliwa, tunasoma closingBalance ya mwezi uliopita na
-// kuitumia kama Opening Balance ya mwezi huu.
 function getPreviousMonthStr(monthStr) {
   const parts = monthStr.split('-');
   let year = parseInt(parts[0], 10);
@@ -101,10 +97,6 @@ async function getOpeningBalance(month) {
   return await getOrComputeClosingBalance(prevMonth);
 }
 
-// Inarudisha closingBalance ya "month" husika. Kama haijahifadhiwa Firestore
-// (mfano miezi ya nyuma kabla utaratibu huu haujawepo), inaikokotoa moja kwa
-// moja kutoka kwenye sales/expenses halisi za mwezi huo (ikirudi nyuma zaidi
-// kama inahitajika), kisha kuihifadhi ili safari nyingine isome moja kwa moja.
 async function getOrComputeClosingBalance(month) {
   try {
     const doc = await db.collection('monthlyBalances').doc(month).get();
@@ -124,7 +116,6 @@ async function getOrComputeClosingBalance(month) {
     return 0;
   }
 
-  // Hakuna rekodi kabisa kwa mwezi huu - hapa ndipo historia inaanzia, simama.
   if (salesDocs.length === 0 && expenseDocs.length === 0) {
     return 0;
   }
@@ -151,6 +142,38 @@ async function saveClosingBalance(month, closingBalance) {
   }
 }
 
+// ================= SUPERVISOR BALANCE POOL (fedha zilizohamishwa kutoka kwa wateja) =================
+// "supervisorPool/main" ni document moja inayoshikilia jumla ya fedha
+// zilizohamishwa kutoka kwa wateja kwenda kwa Supervisor. Fedha hizi
+// hupungua kila zinapotumika kulipia sale mpya kwa chaguo "Balance ya Supervisor".
+const SUPERVISOR_POOL_DOC = 'main';
+
+async function getSupervisorPoolBalance() {
+  try {
+    const doc = await db.collection('supervisorPool').doc(SUPERVISOR_POOL_DOC).get();
+    if (doc.exists) return doc.data().balance || 0;
+    return 0;
+  } catch (err) {
+    console.error('Imeshindikana kusoma Balance ya Supervisor:', err);
+    return 0;
+  }
+}
+
+async function adjustSupervisorPoolBalance(delta) {
+  const ref = db.collection('supervisorPool').doc(SUPERVISOR_POOL_DOC);
+  await ref.set({
+    balance: firebase.firestore.FieldValue.increment(delta),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
+async function refreshSupervisorPoolDisplay() {
+  const el = document.getElementById('supPoolBalanceDisplay');
+  if (!el) return;
+  const bal = await getSupervisorPoolBalance();
+  el.textContent = 'TZS ' + bal.toLocaleString();
+}
+
 const loginSection = document.getElementById('loginSection');
 const loginBtn = document.getElementById('loginBtn');
 const errorMsg = document.getElementById('errorMsg');
@@ -171,6 +194,20 @@ const expenseStatusMsg = document.getElementById('expenseStatusMsg');
 
 const customerCreditDisplay = document.getElementById('customerCreditDisplay');
 const checkCreditBtn = document.getElementById('checkCreditBtn');
+
+// ---- CHANZO CHA MALIPO (Cash / Balance ya Supervisor) ----
+const paymentSourceSelect = document.getElementById('paymentSource');
+const balanceInfoBox = document.getElementById('balanceInfoBox');
+const balCurrentAmountEl = document.getElementById('balCurrentAmount');
+
+// ---- HAMISHA BALANCE YA MTEJA KWENDA KWA SUPERVISOR ----
+const transferCustomerNameInput = document.getElementById('transferCustomerName');
+const transferCheckBalanceBtn = document.getElementById('transferCheckBalanceBtn');
+const transferCustomerBalanceDisplay = document.getElementById('transferCustomerBalanceDisplay');
+const transferAmountInput = document.getElementById('transferAmount');
+const transferReasonInput = document.getElementById('transferReason');
+const transferSubmitBtn = document.getElementById('transferSubmitBtn');
+const transferStatusMsg = document.getElementById('transferStatusMsg');
 
 const mngrMonthPicker = document.getElementById('mngrMonthPicker');
 
@@ -212,6 +249,7 @@ function showDashboard(role) {
     if (managerDashboard) managerDashboard.style.display = 'none';
     refreshSupTitles();
     loadSupervisorData();
+    refreshSupervisorPoolDisplay();
   } else if (role === 'manager') {
     if (supervisorDashboard) supervisorDashboard.style.display = 'none';
     if (managerDashboard) managerDashboard.style.display = 'block';
@@ -238,7 +276,6 @@ async function doLogin() {
   loginBtn.textContent = 'loading...';
 
   try {
-    // Soma "manager" na "supervisor" kwa pamoja (parallel) badala ya moja baada ya nyingine
     const [managerDoc, supervisorDoc] = await Promise.all([
       db.collection('users').doc('manager').get(),
       db.collection('users').doc('supervisor').get()
@@ -317,9 +354,31 @@ if (amountPaidInput) {
   });
 }
 
-// ================= ANGALIA CREDIT/BALANCE YA MTEJA (LIVE, KUTOKA HISTORIA YA MAUZO) =================
-// Hakuna collection ya ziada - tunachukua mauzo yote ya nyuma ya mteja huyu (kwa Jina, exact match)
-// na kujumlisha balance zake (paid - total). Jumla chanya = ana credit. Jumla hasi = anadaiwa.
+// ================= ANGALIA CREDIT/BALANCE YA MTEJA (LIVE) =================
+// Balance ya mteja = jumla ya (paid - total) za sales zake, TOA kiasi
+// chochote ambacho tayari amekwisha "kihamisha" kwenda kwa Supervisor.
+async function getCustomerBalance(name) {
+  const salesSnap = await db.collection('sales')
+    .where('customerName', '==', name)
+    .get();
+
+  let sumBalance = 0;
+  salesSnap.forEach(doc => {
+    sumBalance += doc.data().balance || 0;
+  });
+
+  const transfersSnap = await db.collection('balanceTransfers')
+    .where('customerName', '==', name)
+    .get();
+
+  let sumTransferred = 0;
+  transfersSnap.forEach(doc => {
+    sumTransferred += doc.data().amount || 0;
+  });
+
+  return sumBalance - sumTransferred;
+}
+
 async function checkCustomerCredit() {
   const name = document.getElementById('customerName').value.trim();
 
@@ -332,15 +391,7 @@ async function checkCustomerCredit() {
   checkCreditBtn.textContent = '...';
 
   try {
-    const snap = await db.collection('sales')
-      .where('customerName', '==', name)
-      .get();
-
-    let sumBalance = 0;
-    snap.forEach(doc => {
-      sumBalance += doc.data().balance || 0;
-    });
-
+    const sumBalance = await getCustomerBalance(name);
     customerCreditDisplay.textContent = 'TZS ' + sumBalance.toLocaleString();
   } catch (err) {
     console.error(err);
@@ -354,6 +405,110 @@ if (checkCreditBtn) checkCreditBtn.addEventListener('click', checkCustomerCredit
 
 function resetCreditUI() {
   if (customerCreditDisplay) customerCreditDisplay.textContent = 'TZS 0';
+}
+
+// ---- CHANZO CHA MALIPO: onyesha Balance ya Supervisor mtu anapochagua "Balance ya Supervisor" ----
+async function updateBalanceInfoBox() {
+  if (!paymentSourceSelect || paymentSourceSelect.value !== 'balance') {
+    if (balanceInfoBox) balanceInfoBox.style.display = 'none';
+    return;
+  }
+  if (balanceInfoBox) balanceInfoBox.style.display = 'block';
+  if (balCurrentAmountEl) balCurrentAmountEl.textContent = '...';
+  try {
+    const bal = await getSupervisorPoolBalance();
+    if (balCurrentAmountEl) balCurrentAmountEl.textContent = 'TZS ' + bal.toLocaleString();
+  } catch (err) {
+    console.error(err);
+    if (balCurrentAmountEl) balCurrentAmountEl.textContent = 'Error';
+  }
+}
+
+if (paymentSourceSelect) {
+  paymentSourceSelect.addEventListener('change', updateBalanceInfoBox);
+}
+
+// ================= HAMISHA BALANCE YA MTEJA KWENDA KWA SUPERVISOR =================
+if (transferCheckBalanceBtn) {
+  transferCheckBalanceBtn.addEventListener('click', async () => {
+    const name = transferCustomerNameInput.value.trim();
+    if (!name) {
+      alert('Jaza Jina la Mteja kwanza.');
+      return;
+    }
+    transferCheckBalanceBtn.disabled = true;
+    transferCheckBalanceBtn.textContent = '...';
+    try {
+      const bal = await getCustomerBalance(name);
+      transferCustomerBalanceDisplay.textContent = 'TZS ' + bal.toLocaleString();
+    } catch (err) {
+      console.error(err);
+      transferCustomerBalanceDisplay.textContent = 'Error';
+    } finally {
+      transferCheckBalanceBtn.disabled = false;
+      transferCheckBalanceBtn.textContent = 'View';
+    }
+  });
+}
+
+if (transferSubmitBtn) {
+  transferSubmitBtn.addEventListener('click', async () => {
+    const name = transferCustomerNameInput.value.trim();
+    const amount = parseFloat(transferAmountInput.value.replace(/,/g, '')) || 0;
+    const reason = transferReasonInput ? transferReasonInput.value.trim() : '';
+
+    transferStatusMsg.textContent = '';
+    transferStatusMsg.className = 'status-msg';
+
+    if (!name || !amount || amount <= 0) {
+      transferStatusMsg.textContent = 'Jaza Jina la Mteja na Kiasi sahihi cha kuhamisha.';
+      transferStatusMsg.classList.add('error');
+      return;
+    }
+
+    transferSubmitBtn.disabled = true;
+    transferSubmitBtn.textContent = 'Inaangalia balance...';
+
+    try {
+      const currentBalance = await getCustomerBalance(name);
+      if (amount > currentBalance) {
+        transferStatusMsg.textContent = 'Balance ya ' + name + ' ni TZS ' + currentBalance.toLocaleString() + ' - huwezi kuhamisha zaidi ya hapo.';
+        transferStatusMsg.classList.add('error');
+        transferSubmitBtn.disabled = false;
+        transferSubmitBtn.textContent = 'Hamisha';
+        return;
+      }
+
+      transferSubmitBtn.textContent = 'Inahamisha...';
+
+      await db.collection('balanceTransfers').add({
+        customerName: name,
+        amount,
+        reason,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      await adjustSupervisorPoolBalance(amount);
+
+      transferStatusMsg.textContent = 'Balance ya TZS ' + amount.toLocaleString() + ' imehamishwa kutoka kwa ' + name + ' kwenda kwako.';
+      transferStatusMsg.classList.add('success');
+
+      transferCustomerNameInput.value = '';
+      transferAmountInput.value = '';
+      if (transferReasonInput) transferReasonInput.value = '';
+      if (transferCustomerBalanceDisplay) transferCustomerBalanceDisplay.textContent = 'TZS 0';
+
+      refreshSupervisorPoolDisplay();
+
+    } catch (err) {
+      console.error(err);
+      transferStatusMsg.textContent = 'Hitilafu: ' + err.message;
+      transferStatusMsg.classList.add('error');
+    } finally {
+      transferSubmitBtn.disabled = false;
+      transferSubmitBtn.textContent = 'Hamisha';
+    }
+  });
 }
 
 async function uploadToCloudinary(file) {
@@ -377,6 +532,7 @@ if (submitSaleBtn) {
     const bags = parseFloat(bagsInput.value) || 0;
     const amountPaid = parseFloat(amountPaidInput.value.replace(/,/g, '')) || 0;
     const receiptFile = document.getElementById('receiptFile').files[0];
+    const paymentSource = paymentSourceSelect ? paymentSourceSelect.value : 'cash';
 
     saleStatusMsg.textContent = '';
     saleStatusMsg.className = 'status-msg';
@@ -385,6 +541,33 @@ if (submitSaleBtn) {
       saleStatusMsg.textContent = 'Jaza Tarehe, Namba ya Gari, Namba ya Trailer, Bags, na Picha ya Risiti.';
       saleStatusMsg.classList.add('error');
       return;
+    }
+
+    // Kama malipo yanatoka "Balance ya Supervisor" - HAKUNA haja ya jina la mteja.
+    // Tunaangalia tu kama Balance ya Supervisor iliyopo inatosha kiasi kinachotumika.
+    if (paymentSource === 'balance') {
+      submitSaleBtn.disabled = true;
+      submitSaleBtn.textContent = 'Inaangalia Balance ya Supervisor...';
+
+      let poolBalance = 0;
+      try {
+        poolBalance = await getSupervisorPoolBalance();
+      } catch (err) {
+        console.error(err);
+        saleStatusMsg.textContent = 'Imeshindikana kuangalia Balance ya Supervisor. Jaribu tena.';
+        saleStatusMsg.classList.add('error');
+        submitSaleBtn.disabled = false;
+        submitSaleBtn.textContent = 'Save Data';
+        return;
+      }
+
+      if (amountPaid > poolBalance) {
+        saleStatusMsg.textContent = 'Balance ya Supervisor haitoshi. Balance ya sasa ni TZS ' + poolBalance.toLocaleString() + '.';
+        saleStatusMsg.classList.add('error');
+        submitSaleBtn.disabled = false;
+        submitSaleBtn.textContent = 'Save Data';
+        return;
+      }
     }
 
     submitSaleBtn.disabled = true;
@@ -401,11 +584,17 @@ if (submitSaleBtn) {
       await db.collection('sales').add({
         date, customerName, vehicleNumber, trailerNumber,
         bags, totalPrice: total, amountPaid, balance,
-        receiptUrl, month,
+        receiptUrl, month, paymentSource,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
 
       invalidateMonthCache(month);
+
+      // Kama tumelipa kutoka Balance ya Supervisor, punguza pool kwa kiasi kilichotumika
+      if (paymentSource === 'balance' && amountPaid > 0) {
+        await adjustSupervisorPoolBalance(-amountPaid);
+        refreshSupervisorPoolDisplay();
+      }
 
       saleStatusMsg.textContent = 'Records are saved successifully!';
       saleStatusMsg.classList.add('success');
@@ -418,6 +607,9 @@ if (submitSaleBtn) {
       document.getElementById('receiptFile').value = '';
       resetCreditUI();
       recalc();
+
+      if (paymentSourceSelect) paymentSourceSelect.value = 'cash';
+      if (balanceInfoBox) balanceInfoBox.style.display = 'none';
 
       if (month === supMonthPicker.value) loadSupervisorData();
 
@@ -434,14 +626,8 @@ if (submitSaleBtn) {
 
 async function loadSupervisorData() {
   const month = supMonthPicker.value;
-  // Soma Opening Balance (balance iliyobaki mwezi uliopita) kabla ya kupakia sales/expenses
   supOpeningBalance = await getOpeningBalance(month);
-
-  // Sales na Expenses hazitegemeani - zisome kwa pamoja (parallel) badala ya moja baada ya nyingine
   await Promise.all([loadSupSales(), loadSupExpenses()]);
-
-  // Baada ya kujua sumBalance na sumExpenses za mwezi huu, hifadhi Closing Balance
-  // ili itumike kama Opening Balance ya mwezi ujao.
   const closing = supOpeningBalance + supLastSumBalance - supLastSumExpenses;
   await saveClosingBalance(month, closing);
 }
@@ -454,7 +640,6 @@ async function loadSupSales() {
   const month = supMonthPicker.value;
   const docs = await getSalesForMonth(month);
 
-  // Pass 1: pata jumla ya bags kwanza, ili tujue rate ya bonus inayotumika
   let sumBags = 0;
   docs.forEach(doc => {
     sumBags += doc.data.bags || 0;
@@ -498,7 +683,6 @@ async function loadSupSales() {
   document.getElementById('supSumBalance').textContent = sumBalance.toLocaleString();
   document.getElementById('supSumBonus').textContent = sumBonus.toLocaleString();
 
-  // Total Bonus box: 0 mpaka jumla ya bags ifike 3000
   const totalBonusDisplay = (sumBags >= BONUS_THRESHOLD_1) ? sumBonus : 0;
   document.getElementById('supBonusJuu').textContent = 'TZS ' + totalBonusDisplay.toLocaleString();
 
@@ -594,11 +778,9 @@ window.deleteExpense = async function(id) {
 function updateSupBalanceKuu(sumBalance, sumExpenses) {
   if (sumBalance !== null && sumBalance !== undefined) supLastSumBalance = sumBalance;
   if (sumExpenses !== null && sumExpenses !== undefined) supLastSumExpenses = sumExpenses;
-  // Balance Kuu sasa inajumuisha Opening Balance ya mwezi uliopita
   const kuu = supOpeningBalance + supLastSumBalance - supLastSumExpenses;
   const el = document.getElementById('supBalanceKuu');
   if (el) el.textContent = 'TZS ' + kuu.toLocaleString();
-  // Balance (Juu) sasa i-function sawa na Balance Kuu - namba ile ile
   const elJuu = document.getElementById('supBalanceJuu');
   if (elJuu) elJuu.textContent = 'TZS ' + kuu.toLocaleString();
 }
@@ -620,14 +802,8 @@ if (mngrMonthPicker) {
 
 async function loadManagerData() {
   const month = mngrMonthPicker.value;
-  // Soma Opening Balance (balance iliyobaki mwezi uliopita) kabla ya kupakia sales/expenses
   mngrOpeningBalance = await getOpeningBalance(month);
-
-  // Sales na Expenses hazitegemeani - zisome kwa pamoja (parallel) badala ya moja baada ya nyingine
   await Promise.all([loadMngrSales(), loadMngrExpenses()]);
-
-  // Baada ya kujua sumBalance na sumExpenses za mwezi huu, hifadhi Closing Balance
-  // ili itumike kama Opening Balance ya mwezi ujao.
   const closing = mngrOpeningBalance + mngrLastSumBalance - mngrLastSumExpenses;
   await saveClosingBalance(month, closing);
 }
@@ -640,7 +816,6 @@ async function loadMngrSales() {
   const month = mngrMonthPicker.value;
   const docs = await getSalesForMonth(month);
 
-  // Pass 1: pata jumla ya bags kwanza, ili tujue rate ya bonus inayotumika
   let sumBags = 0;
   docs.forEach(doc => {
     sumBags += doc.data.bags || 0;
@@ -699,7 +874,6 @@ async function loadMngrSales() {
   document.getElementById('mngrSumBalance').textContent = sumBalance.toLocaleString();
   document.getElementById('mngrSumBonus').textContent = sumBonus.toLocaleString();
 
-  // Total Bonus box: 0 mpaka jumla ya bags ifike 3000
   const totalBonusDisplay = (sumBags >= BONUS_THRESHOLD_1) ? sumBonus : 0;
   document.getElementById('mngrBonusJuu').textContent = 'TZS ' + totalBonusDisplay.toLocaleString();
 
@@ -755,11 +929,9 @@ async function loadMngrExpenses() {
 function updateMngrBalanceKuu(sumBalance, sumExpenses) {
   if (sumBalance !== null && sumBalance !== undefined) mngrLastSumBalance = sumBalance;
   if (sumExpenses !== null && sumExpenses !== undefined) mngrLastSumExpenses = sumExpenses;
-  // Balance Kuu sasa inajumuisha Opening Balance ya mwezi uliopita
   const kuu = mngrOpeningBalance + mngrLastSumBalance - mngrLastSumExpenses;
   const el = document.getElementById('mngrBalanceKuu');
   if (el) el.textContent = 'TZS ' + kuu.toLocaleString();
-  // Balance (Juu) sasa i-function sawa na Balance Kuu - namba ile ile
   const elJuu = document.getElementById('mngrBalanceJuu');
   if (elJuu) elJuu.textContent = 'TZS ' + kuu.toLocaleString();
 }
