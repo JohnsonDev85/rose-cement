@@ -71,6 +71,19 @@
             <input type="text" id="totalPrice" readonly value="0">
           </div>
           <div>
+            <label for="paymentSource">Chanzo cha Malipo</label>
+            <select id="paymentSource">
+              <option value="cash">Fedha Taslimu</option>
+              <option value="balance">Balance ya Supervisor</option>
+            </select>
+          </div>
+          <div id="balanceInfoBox" style="display:none;">
+            <label>Balance ya Supervisor Iliyopo</label>
+            <div class="credit-check-row">
+              <span id="balCurrentAmount">TZS 0</span>
+            </div>
+          </div>
+          <div>
             <label for="amountPaid">Paid</label>
             <input type="text" inputmode="numeric" id="amountPaid" min="0" >
           </div>
@@ -85,6 +98,33 @@
         </div>
         <button class="submit-btn" id="submitSaleBtn">Save  Data</button>
         <p class="status-msg" id="saleStatusMsg"></p>
+      </div>
+
+      <div class="card">
+        <h2>Hamisha Balance ya Mteja kwenda kwako</h2>
+        <div class="form-grid">
+          <div>
+            <label for="transferCustomerName">Jina la Mteja</label>
+            <input type="text" id="transferCustomerName">
+          </div>
+          <div>
+            <label>Balance ya Mteja Huyu</label>
+            <div class="credit-check-row">
+              <span id="transferCustomerBalanceDisplay">TZS 0</span>
+              <button type="button" id="transferCheckBalanceBtn">View</button>
+            </div>
+          </div>
+          <div>
+            <label for="transferAmount">Kiasi cha Kuhamisha</label>
+            <input type="number" id="transferAmount" min="0">
+          </div>
+          <div>
+            <label for="transferReason">Sababu (hiari)</label>
+            <input type="text" id="transferReason" placeholder="Mfano: kuhamishia kwenye mfuko wa jumla">
+          </div>
+        </div>
+        <button class="submit-btn" id="transferSubmitBtn">Hamisha</button>
+        <p class="status-msg" id="transferStatusMsg"></p>
       </div>
 
       <div class="card">
@@ -125,7 +165,7 @@
       </div>
 
       <div class="card">
-        <h2> Mbegu Matumizi</h2>
+        <h2> Rose  Matumizi</h2>
         <div class="form-grid">
           <div>
             <label for="expenseDesc">Maelezo ya Matumizi</label>
@@ -136,7 +176,7 @@
             <input type="number" id="expenseAmount" min="0">
           </div>
         </div>
-        <button class="submit-btn" id="submitExpenseBtn">Add Mbegu Matumizi</button>
+        <button class="submit-btn" id="submitExpenseBtn">Add Rose Matumizi</button>
         <p class="status-msg" id="expenseStatusMsg"></p>
 
         <div class="table-wrap">
@@ -148,6 +188,10 @@
         </div>
 
         <div class="balance-summary">
+          <div class="balance-box">
+            <div class="label">Balance ya Supervisor</div>
+            <div class="value" id="supPoolBalanceDisplay">TZS 0</div>
+          </div>
           <div class="balance-box final">
             <div class="label">BALANCE KUU (Baada ya Matumizi)</div>
             <div class="value" id="supBalanceKuu">TZS 0</div>
