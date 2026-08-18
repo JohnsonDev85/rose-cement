@@ -20,7 +20,7 @@ db.enablePersistence().catch((err) => {
 
 const CLOUD_NAME = "o8a7vquz";
 const UPLOAD_PRESET = "cement-receipt";
-const PRICE_PER_BAG = 15400;
+const PRICE_PER_BAG = 15700;
 
 // Vigezo vya Bonus - inategemea jumla ya bags za mwezi mzima
 const BONUS_THRESHOLD_1 = 3000; // chini ya hii, hakuna bonus (0)
