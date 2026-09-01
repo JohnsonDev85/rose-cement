@@ -557,4 +557,394 @@ if (submitSaleBtn) {
         saleStatusMsg.textContent = 'Imeshindikana kuangalia Balance ya Supervisor. Jaribu tena.';
         saleStatusMsg.classList.add('error');
         submitSaleBtn.disabled = false;
-        submitSaleBtn.textCont
+        submitSaleBtn.textContent = 'Save Data';
+        return;
+      }
+
+      if (amountPaid > poolBalance) {
+        saleStatusMsg.textContent = 'Balance ya Supervisor haitoshi. Balance ya sasa ni TZS ' + poolBalance.toLocaleString() + '.';
+        saleStatusMsg.classList.add('error');
+        submitSaleBtn.disabled = false;
+        submitSaleBtn.textContent = 'Save Data';
+        return;
+      }
+    }
+
+    submitSaleBtn.disabled = true;
+    submitSaleBtn.textContent = 'Uploading picture...';
+
+    try {
+      const receiptUrl = await uploadToCloudinary(receiptFile);
+      const total = bags * PRICE_PER_BAG;
+      const balance = amountPaid - total;
+      const month = date.substring(0,7);
+
+      submitSaleBtn.textContent = 'Saving...';
+
+      await db.collection('sales').add({
+        date, customerName, vehicleNumber, trailerNumber,
+        bags, totalPrice: total, amountPaid, balance,
+        receiptUrl, month, paymentSource,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      invalidateMonthCache(month);
+
+      // Kama tumelipa kutoka Balance ya Supervisor, punguza pool kwa kiasi kilichotumika
+      if (paymentSource === 'balance' && amountPaid > 0) {
+        await adjustSupervisorPoolBalance(-amountPaid);
+        refreshSupervisorPoolDisplay();
+      }
+
+      saleStatusMsg.textContent = 'Records are saved successifully!';
+      saleStatusMsg.classList.add('success');
+
+      document.getElementById('customerName').value = '';
+      document.getElementById('vehicleNumber').value = '';
+      document.getElementById('trailerNumber').value = '';
+      bagsInput.value = '';
+      amountPaidInput.value = '';
+      document.getElementById('receiptFile').value = '';
+      resetCreditUI();
+      recalc();
+
+      if (paymentSourceSelect) paymentSourceSelect.value = 'cash';
+      if (balanceInfoBox) balanceInfoBox.style.display = 'none';
+
+      if (month === supMonthPicker.value) loadSupervisorData();
+
+    } catch (err) {
+      console.error(err);
+      saleStatusMsg.textContent = 'error: ' + err.message;
+      saleStatusMsg.classList.add('error');
+    } finally {
+      submitSaleBtn.disabled = false;
+      submitSaleBtn.textContent = 'Save Data';
+    }
+  });
+}
+
+async function loadSupervisorData() {
+  const month = supMonthPicker.value;
+  supOpeningBalance = await getOpeningBalance(month);
+  await Promise.all([loadSupSales(), loadSupExpenses()]);
+  const closing = supOpeningBalance + supLastSumBalance - supLastSumExpenses;
+  await saveClosingBalance(month, closing);
+}
+
+async function loadSupSales() {
+  const tbody = document.getElementById('supSalesTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="11">Download...</td></tr>';
+
+  const month = supMonthPicker.value;
+  const docs = await getSalesForMonth(month);
+
+  let sumBags = 0;
+  docs.forEach(doc => {
+    sumBags += doc.data.bags || 0;
+  });
+  const bonusRate = getBonusRate(sumBags);
+
+  let sumTotal=0, sumPaid=0, sumBalance=0, sumBonus=0;
+  tbody.innerHTML = '';
+
+  if (docs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11">Hakuna rekodi kwa mwezi huu.</td></tr>';
+  }
+
+  docs.forEach(doc => {
+    const d = doc.data;
+    sumTotal += d.totalPrice || 0;
+    sumPaid += d.amountPaid || 0;
+    sumBalance += d.balance || 0;
+    const rowBonus = (d.bags || 0) * bonusRate;
+    sumBonus += rowBonus;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+       '<td>' + d.date + '</td>' +
+       '<td>' + (d.customerName||'') + '</td>' +
+       '<td>' + d.vehicleNumber + '</td>' +
+       '<td>' + d.trailerNumber + '</td>' +
+       '<td>' + d.bags + '</td>' +
+       '<td>' + (d.totalPrice||0).toLocaleString() + '</td>' +
+       '<td>' + (d.amountPaid||0).toLocaleString() + '</td>' +
+       '<td>' + (d.balance||0).toLocaleString() + '</td>' +
+       '<td><a class="receipt-link" href="' + d.receiptUrl + '" target="_blank">View receipt</a></td>' +
+       '<td>' + rowBonus.toLocaleString() + '</td>' +
+       '<td><button class="del-btn" onclick="deleteSale(\'' + doc.id + '\')">X</button></td>';
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('supSumBags').textContent = sumBags.toLocaleString();
+  document.getElementById('supSumTotal').textContent = sumTotal.toLocaleString();
+  document.getElementById('supSumPaid').textContent = sumPaid.toLocaleString();
+  document.getElementById('supSumBalance').textContent = sumBalance.toLocaleString();
+  document.getElementById('supSumBonus').textContent = sumBonus.toLocaleString();
+
+  const totalBonusDisplay = (sumBags >= BONUS_THRESHOLD_1) ? sumBonus : 0;
+  document.getElementById('supBonusJuu').textContent = 'TZS ' + totalBonusDisplay.toLocaleString();
+
+  updateSupBalanceKuu(sumBalance, null);
+}
+
+window.deleteSale = async function(id) {
+  if (!confirm('Are you sure you want to delete this record?')) return;
+  await db.collection('sales').doc(id).delete();
+  invalidateMonthCache(supMonthPicker.value);
+  loadSupervisorData();
+};
+
+if (submitExpenseBtn) {
+  submitExpenseBtn.addEventListener('click', async () => {
+    const desc = document.getElementById('expenseDesc').value.trim();
+    const amount = parseFloat(document.getElementById('expenseAmount').value) || 0;
+
+    expenseStatusMsg.textContent = '';
+    expenseStatusMsg.className = 'status-msg';
+
+    if (!desc || !amount) {
+      expenseStatusMsg.textContent = 'Jaza maelezo na kiasi cha matumizi.';
+      expenseStatusMsg.classList.add('error');
+      return;
+    }
+
+    submitExpenseBtn.disabled = true;
+
+    try {
+      await db.collection('expenses').add({
+        description: desc, amount,
+        month: supMonthPicker.value,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      invalidateMonthCache(supMonthPicker.value);
+
+      expenseStatusMsg.textContent = 'Expenses Saved!';
+      expenseStatusMsg.classList.add('success');
+
+      document.getElementById('expenseDesc').value = '';
+      document.getElementById('expenseAmount').value = '';
+
+      loadSupervisorData();
+    } catch (err) {
+      console.error(err);
+      expenseStatusMsg.textContent = 'Hitilafu: ' + err.message;
+      expenseStatusMsg.classList.add('error');
+    } finally {
+      submitExpenseBtn.disabled = false;
+    }
+  });
+}
+
+async function loadSupExpenses() {
+  const tbody = document.getElementById('supExpensesTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="3">Uploading...</td></tr>';
+
+  const month = supMonthPicker.value;
+  const docs = await getExpensesForMonth(month);
+
+  let sumExpenses = 0;
+  tbody.innerHTML = '';
+
+  if (docs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3">Hakuna matumizi kwa mwezi huu.</td></tr>';
+  }
+
+  docs.forEach(doc => {
+    const d = doc.data;
+    sumExpenses += d.amount || 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+       '<td>' + d.description + '</td>' +
+       '<td>' + (d.amount||0).toLocaleString() + '</td>' +
+       '<td><button class="del-btn" onclick="deleteExpense(\'' + doc.id + '\')">X</button></td>';
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('supSumExpenses').textContent = sumExpenses.toLocaleString();
+  updateSupBalanceKuu(null, sumExpenses);
+}
+
+window.deleteExpense = async function(id) {
+  if (!confirm('Are you sure you want to delete this expense?')) return;
+  await db.collection('expenses').doc(id).delete();
+  invalidateMonthCache(supMonthPicker.value);
+  loadSupervisorData();
+};
+
+function updateSupBalanceKuu(sumBalance, sumExpenses) {
+  if (sumBalance !== null && sumBalance !== undefined) supLastSumBalance = sumBalance;
+  if (sumExpenses !== null && sumExpenses !== undefined) supLastSumExpenses = sumExpenses;
+  const kuu = supOpeningBalance + supLastSumBalance - supLastSumExpenses;
+  const el = document.getElementById('supBalanceKuu');
+  if (el) el.textContent = 'TZS ' + kuu.toLocaleString();
+  const elJuu = document.getElementById('supBalanceJuu');
+  if (elJuu) elJuu.textContent = 'TZS ' + kuu.toLocaleString();
+}
+
+function refreshMngrTitles() {
+  const label = getMonthLabel(mngrMonthPicker.value);
+  const title1 = document.getElementById('mngrPageTitle');
+  const title2 = document.getElementById('mngrSalesTableTitle');
+  if (title1) title1.textContent = "BUSINESS MANAGER -"+ label;
+  if (title2) title2.textContent = "Rekodi za Mauzo - " + label;
+}
+
+if (mngrMonthPicker) {
+  mngrMonthPicker.addEventListener('change', () => {
+    refreshMngrTitles();
+    loadManagerData();
+  });
+}
+
+async function loadManagerData() {
+  const month = mngrMonthPicker.value;
+  mngrOpeningBalance = await getOpeningBalance(month);
+  await Promise.all([loadMngrSales(), loadMngrExpenses()]);
+  const closing = mngrOpeningBalance + mngrLastSumBalance - mngrLastSumExpenses;
+  await saveClosingBalance(month, closing);
+}
+
+async function loadMngrSales() {
+  const tbody = document.getElementById('mngrSalesTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="10">Uploading...</td></tr>';
+
+  const month = mngrMonthPicker.value;
+  const docs = await getSalesForMonth(month);
+
+  let sumBags = 0;
+  docs.forEach(doc => {
+    sumBags += doc.data.bags || 0;
+  });
+  const bonusRate = getBonusRate(sumBags);
+
+  let sumTotal=0, sumPaid=0, sumBalance=0, sumBonus=0;
+  
+  const weeklyData = {
+    1:{count:0,bags:0,total:0,paid:0,balance:0},
+    2:{count:0,bags:0,total:0,paid:0,balance:0},
+    3:{count:0,bags:0,total:0,paid:0,balance:0},
+    4:{count:0,bags:0,total:0,paid:0,balance:0},
+    5:{count:0,bags:0,total:0,paid:0,balance:0}
+  };
+
+  tbody.innerHTML = '';
+  if (docs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10">Hakuna rekodi kwa mwezi huu.</td></tr>';
+  }
+
+  docs.forEach(doc => {
+    const d = doc.data;
+    sumTotal += d.totalPrice || 0;
+    sumPaid += d.amountPaid || 0;
+    sumBalance += d.balance || 0;
+    const rowBonus = (d.bags || 0) * bonusRate;
+    sumBonus += rowBonus;
+
+    const day = parseInt(d.date.split('-')[2], 10);
+    const weekNum = Math.min(Math.ceil(day / 7), 5);
+    weeklyData[weekNum].count += 1;
+    weeklyData[weekNum].bags += d.bags || 0;
+    weeklyData[weekNum].total += d.totalPrice || 0;
+    weeklyData[weekNum].paid += d.amountPaid || 0;
+    weeklyData[weekNum].balance += d.balance || 0;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+       '<td>' + d.date + '</td>' +
+       '<td>' + (d.customerName||'') + '</td>' +
+       '<td>' + d.vehicleNumber + '</td>' +
+       '<td>' + d.trailerNumber + '</td>' +
+       '<td>' + d.bags + '</td>' +
+       '<td>' + (d.totalPrice||0).toLocaleString() + '</td>' +
+       '<td>' + (d.amountPaid||0).toLocaleString() + '</td>' +
+       '<td>' + (d.balance||0).toLocaleString() + '</td>' +
+       '<td><a class="receipt-link" href="' + d.receiptUrl + '" target="_blank">View receipt</a></td>' +
+       '<td>' + rowBonus.toLocaleString() + '</td>';
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('mngrSumBags').textContent = sumBags.toLocaleString();
+  document.getElementById('mngrSumTotal').textContent = sumTotal.toLocaleString();
+  document.getElementById('mngrSumPaid').textContent = sumPaid.toLocaleString();
+  document.getElementById('mngrSumBalance').textContent = sumBalance.toLocaleString();
+  document.getElementById('mngrSumBonus').textContent = sumBonus.toLocaleString();
+
+  const totalBonusDisplay = (sumBags >= BONUS_THRESHOLD_1) ? sumBonus : 0;
+  document.getElementById('mngrBonusJuu').textContent = 'TZS ' + totalBonusDisplay.toLocaleString();
+
+  updateMngrBalanceKuu(sumBalance, null);
+
+  const weeklyBody = document.getElementById('weeklyTableBody');
+  if (!weeklyBody) return;
+  weeklyBody.innerHTML = '';
+  for (let w = 1; w <= 5; w++) {
+    const wd = weeklyData[w];
+    if (wd.count === 0) continue;
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+       '<td>Wiki ' + w + '</td>' +
+       '<td>' + wd.count + '</td>' +
+       '<td>' + wd.bags.toLocaleString() + '</td>' +
+       '<td>' + wd.total.toLocaleString() + '</td>' +
+       '<td>' + wd.paid.toLocaleString() + '</td>' +
+       '<td>' + wd.balance.toLocaleString() + '</td>';
+    weeklyBody.appendChild(tr);
+  }
+  if (weeklyBody.innerHTML === '') {
+    weeklyBody.innerHTML = '<tr><td colspan="6">Hakuna data kwa mwezi huu.</td></tr>';
+  }
+}
+
+async function loadMngrExpenses() {
+  const tbody = document.getElementById('mngrExpensesTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="2">Uploading...</td></tr>';
+
+  const month = mngrMonthPicker.value;
+  const docs = await getExpensesForMonth(month);
+
+  let sumExpenses = 0;
+  tbody.innerHTML = '';
+  if (docs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="2">Hakuna matumizi kwa mwezi huu.</td></tr>';
+  }
+
+  docs.forEach(doc => {
+    const d = doc.data;
+    sumExpenses += d.amount || 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + d.description + '</td><td>' + (d.amount||0).toLocaleString() + '</td>';
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('mngrSumExpenses').textContent = sumExpenses.toLocaleString();
+  updateMngrBalanceKuu(null, sumExpenses);
+}
+
+function updateMngrBalanceKuu(sumBalance, sumExpenses) {
+  if (sumBalance !== null && sumBalance !== undefined) mngrLastSumBalance = sumBalance;
+  if (sumExpenses !== null && sumExpenses !== undefined) mngrLastSumExpenses = sumExpenses;
+  const kuu = mngrOpeningBalance + mngrLastSumBalance - mngrLastSumExpenses;
+  const el = document.getElementById('mngrBalanceKuu');
+  if (el) el.textContent = 'TZS ' + kuu.toLocaleString();
+  const elJuu = document.getElementById('mngrBalanceJuu');
+  if (elJuu) elJuu.textContent = 'TZS ' + kuu.toLocaleString();
+}
+
+const logoutHandler = () => {
+  sessionStorage.clear();
+  if (loginSection) loginSection.style.display = 'flex';
+  if (supervisorDashboard) supervisorDashboard.style.display = 'none';
+  if (managerDashboard) managerDashboard.style.display = 'none';
+  if (passwordInput) passwordInput.value = '';
+};
+
+const supLogout = document.getElementById('supLogoutBtn');
+const mngrLogout = document.getElementById('mngrLogoutBtn');
+if (supLogout) supLogout.addEventListener('click', logoutHandler);
+if (mngrLogout) mngrLogout.addEventListener('click', logoutHandler);
