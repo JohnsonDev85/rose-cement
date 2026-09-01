@@ -1,12 +1,5 @@
 // ================= 1. FIREBASE CONFIGURATION =================
-const firebaseConfig = {
-  apiKey: "AIzaSyA6gAEZihvB5nR3X2fhHVTRuJjDvdy2wNw",
-  authDomain: "cement-sales.firebaseapp.com",
-  projectId: "cement-sales",
-  storageBucket: "cement-sales.firebasestorage.app",
-  messagingSenderId: "672621859889",
-  appId: "1:672621859889:web:6be91ae4919637d7de7110"
-};
+
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
