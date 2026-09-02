@@ -20,7 +20,7 @@ db.enablePersistence().catch((err) => {
 
 const CLOUD_NAME = "o8a7vquz";
 const UPLOAD_PRESET = "cement-receipt";
-const PRICE_PER_BAG = 15400;
+const PRICE_PER_BAG = 16900;
 
 // Vigezo vya Bonus - inategemea jumla ya bags za mwezi mzima
 const BONUS_THRESHOLD_1 = 3000; // chini ya hii, hakuna bonus (0)
@@ -47,6 +47,12 @@ let mngrLastSumExpenses = 0;
 // Balance iliyobaki kutoka mwezi uliopita (Opening Balance) - carry-forward
 let supOpeningBalance = 0;
 let mngrOpeningBalance = 0;
+
+// Bonus iliyobaki kutoka mwezi uliopita (Opening Bonus) - carry-forward, sawa na Balance
+let supOpeningBonus = 0;
+let mngrOpeningBonus = 0;
+let supLastBonusEarned = 0;
+let mngrLastBonusEarned = 0;
 
 // ================= PERFORMANCE CACHE (per month) =================
 // Sales/expenses ni sawa kwa Supervisor na Manager (collection moja), hivyo
@@ -139,6 +145,60 @@ async function saveClosingBalance(month, closingBalance) {
     });
   } catch (err) {
     console.error('Imeshindikana kuhifadhi closing balance:', err);
+  }
+}
+
+// ================= OPENING/CLOSING BONUS (KUBEBA BONUS KATI YA MIEZI) =================
+// Sawa kabisa na Balance: Bonus ya mwezi uliopita (isiyolipwa) inahamia
+// kama "Opening Bonus" ya mwezi mpya, na inajumlishwa na bonus mpya iliyopatikana.
+async function getOpeningBonus(month) {
+  const prevMonth = getPreviousMonthStr(month);
+  return await getOrComputeClosingBonus(prevMonth);
+}
+
+async function getOrComputeClosingBonus(month) {
+  try {
+    const doc = await db.collection('monthlyBonuses').doc(month).get();
+    if (doc.exists) return doc.data().closingBonus || 0;
+  } catch (err) {
+    console.error('Imeshindikana kusoma closing bonus:', err);
+  }
+
+  let salesDocs = [];
+  try {
+    salesDocs = await getSalesForMonth(month);
+  } catch (err) {
+    console.error('Imeshindikana kusoma sales za backfill bonus:', err);
+    return 0;
+  }
+
+  if (salesDocs.length === 0) {
+    return 0;
+  }
+
+  let sumBagsMonth = 0;
+  salesDocs.forEach(d => sumBagsMonth += d.data.bags || 0);
+  const rate = getBonusRate(sumBagsMonth);
+
+  let sumBonusMonth = 0;
+  salesDocs.forEach(d => sumBonusMonth += (d.data.bags || 0) * rate);
+  const monthBonusEarned = (sumBagsMonth >= BONUS_THRESHOLD_1) ? sumBonusMonth : 0;
+
+  const prevOpening = await getOrComputeClosingBonus(getPreviousMonthStr(month));
+  const closing = prevOpening + monthBonusEarned;
+
+  await saveClosingBonus(month, closing);
+  return closing;
+}
+
+async function saveClosingBonus(month, closingBonus) {
+  try {
+    await db.collection('monthlyBonuses').doc(month).set({
+      closingBonus,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (err) {
+    console.error('Imeshindikana kuhifadhi closing bonus:', err);
   }
 }
 
@@ -627,9 +687,12 @@ if (submitSaleBtn) {
 async function loadSupervisorData() {
   const month = supMonthPicker.value;
   supOpeningBalance = await getOpeningBalance(month);
+  supOpeningBonus = await getOpeningBonus(month);
   await Promise.all([loadSupSales(), loadSupExpenses()]);
   const closing = supOpeningBalance + supLastSumBalance - supLastSumExpenses;
   await saveClosingBalance(month, closing);
+  const closingBonus = supOpeningBonus + supLastBonusEarned;
+  await saveClosingBonus(month, closingBonus);
 }
 
 async function loadSupSales() {
@@ -683,7 +746,10 @@ async function loadSupSales() {
   document.getElementById('supSumBalance').textContent = sumBalance.toLocaleString();
   document.getElementById('supSumBonus').textContent = sumBonus.toLocaleString();
 
-  const totalBonusDisplay = (sumBags >= BONUS_THRESHOLD_1) ? sumBonus : 0;
+  // Bonus ya mwezi huu (kama bags zimefikia kiwango cha chini), kisha ijumlishwe
+  // na Bonus ya Awali (opening) iliyohamia kutoka mwezi uliopita - kama Balance.
+  supLastBonusEarned = (sumBags >= BONUS_THRESHOLD_1) ? sumBonus : 0;
+  const totalBonusDisplay = supOpeningBonus + supLastBonusEarned;
   document.getElementById('supBonusJuu').textContent = 'TZS ' + totalBonusDisplay.toLocaleString();
 
   updateSupBalanceKuu(sumBalance, null);
@@ -803,9 +869,12 @@ if (mngrMonthPicker) {
 async function loadManagerData() {
   const month = mngrMonthPicker.value;
   mngrOpeningBalance = await getOpeningBalance(month);
+  mngrOpeningBonus = await getOpeningBonus(month);
   await Promise.all([loadMngrSales(), loadMngrExpenses()]);
   const closing = mngrOpeningBalance + mngrLastSumBalance - mngrLastSumExpenses;
   await saveClosingBalance(month, closing);
+  const closingBonus = mngrOpeningBonus + mngrLastBonusEarned;
+  await saveClosingBonus(month, closingBonus);
 }
 
 async function loadMngrSales() {
@@ -874,7 +943,10 @@ async function loadMngrSales() {
   document.getElementById('mngrSumBalance').textContent = sumBalance.toLocaleString();
   document.getElementById('mngrSumBonus').textContent = sumBonus.toLocaleString();
 
-  const totalBonusDisplay = (sumBags >= BONUS_THRESHOLD_1) ? sumBonus : 0;
+  // Bonus ya mwezi huu (kama bags zimefikia kiwango cha chini), kisha ijumlishwe
+  // na Bonus ya Awali (opening) iliyohamia kutoka mwezi uliopita - kama Balance.
+  mngrLastBonusEarned = (sumBags >= BONUS_THRESHOLD_1) ? sumBonus : 0;
+  const totalBonusDisplay = mngrOpeningBonus + mngrLastBonusEarned;
   document.getElementById('mngrBonusJuu').textContent = 'TZS ' + totalBonusDisplay.toLocaleString();
 
   updateMngrBalanceKuu(sumBalance, null);
