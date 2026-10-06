@@ -409,9 +409,9 @@ function recalc() {
   totalPriceInput.value = total.toLocaleString();
 
   const source = paymentSourceSelect ? paymentSourceSelect.value : 'cash';
-  const cash = parseNum(amountPaidInput);
+  const cash = (source === 'bonus') ? 0 : parseNum(amountPaidInput);
   const balUsed = (source === 'cash_balance' || source === 'cash_balance_bonus') ? parseNum(balanceAmountUsedInput) : 0;
-  const bonUsed = (source === 'cash_balance_bonus') ? parseNum(bonusAmountUsedInput) : 0;
+  const bonUsed = (source === 'cash_balance_bonus' || source === 'bonus') ? parseNum(bonusAmountUsedInput) : 0;
 
   const paid = cash + balUsed + bonUsed;
   const balance = paid - total;
@@ -479,7 +479,13 @@ function resetCreditUI() {
 async function updatePaymentUI() {
   const source = paymentSourceSelect ? paymentSourceSelect.value : 'cash';
   const usesBalance = (source === 'cash_balance' || source === 'cash_balance_bonus');
-  const usesBonus = (source === 'cash_balance_bonus');
+  const usesBonus = (source === 'cash_balance_bonus' || source === 'bonus');
+
+  // Bonus Pekee: hakuna fedha taslimu
+  if (amountPaidInput) {
+    amountPaidInput.disabled = (source === 'bonus');
+    if (source === 'bonus') amountPaidInput.value = '';
+  }
 
   if (balanceInfoBox) balanceInfoBox.style.display = usesBalance ? 'block' : 'none';
   if (balanceUsedBox) balanceUsedBox.style.display = usesBalance ? 'block' : 'none';
@@ -631,9 +637,9 @@ if (submitSaleBtn) {
     const paymentSource = paymentSourceSelect ? paymentSourceSelect.value : 'cash';
 
     const usesBalance = (paymentSource === 'cash_balance' || paymentSource === 'cash_balance_bonus');
-    const usesBonus = (paymentSource === 'cash_balance_bonus');
+    const usesBonus = (paymentSource === 'cash_balance_bonus' || paymentSource === 'bonus');
 
-    const cashPaid = parseNum(amountPaidInput);
+    const cashPaid = (paymentSource === 'bonus') ? 0 : parseNum(amountPaidInput);
     const balanceUsed = usesBalance ? parseNum(balanceAmountUsedInput) : 0;
     const bonusUsed = usesBonus ? parseNum(bonusAmountUsedInput) : 0;
     const amountPaid = cashPaid + balanceUsed + bonusUsed; // jumla iliyolipwa
@@ -661,13 +667,13 @@ if (submitSaleBtn) {
     const month = date.substring(0, 7);
 
     // Angalia kama Balance ya Supervisor na Bonus vinatosha
-    if (usesBalance) {
+    if (usesBalance || usesBonus) {
       submitSaleBtn.disabled = true;
       submitSaleBtn.textContent = 'Inaangalia Balance/Bonus...';
 
       try {
         const poolBalance = await getSupervisorPoolBalance();
-        if (balanceUsed > poolBalance) {
+        if (usesBalance && balanceUsed > poolBalance) {
           saleStatusMsg.textContent = 'Balance ya Supervisor haitoshi. Balance ya sasa ni TZS ' + poolBalance.toLocaleString() + '.';
           saleStatusMsg.classList.add('error');
           submitSaleBtn.disabled = false;
