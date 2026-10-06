@@ -70,20 +70,31 @@
             <label for="totalPrice">Total Price</label>
             <input type="text" id="totalPrice" readonly value="0">
           </div>
+
+          <!-- CHANZO CHA MALIPO -->
           <div>
             <label for="paymentSource">Chanzo cha Malipo</label>
             <select id="paymentSource">
               <option value="cash">Fedha Taslimu</option>
-              <option value="cash_balance_bonus">Fedha Taslimu + Balance + Bonus</option>
-              <option value="cash_balance">Fedha Taslimu + Balance</option>
+              <option value="balance">Balance</option>
               <option value="bonus">Bonus Pekee</option>
+              <option value="cash_balance">Fedha Taslimu + Balance</option>
+              <option value="cash_balance_bonus">Fedha Taslimu + Balance + Bonus</option>
             </select>
           </div>
+          <div id="cashBox">
+            <label for="amountPaid">Kiasi cha Fedha Taslimu</label>
+            <input type="text" inputmode="numeric" id="amountPaid" min="0" >
+          </div>
           <div id="balanceInfoBox" style="display:none;">
-            <label>Balance ya Supervisor Iliyopo</label>
+            <label>Balance Iliyopo</label>
             <div class="credit-check-row">
               <span id="balCurrentAmount">TZS 0</span>
             </div>
+          </div>
+          <div id="balanceUsedBox" style="display:none;">
+            <label for="balanceAmountUsed">Kiasi cha Balance</label>
+            <input type="text" inputmode="numeric" id="balanceAmountUsed" placeholder="Mfano: 50000">
           </div>
           <div id="bonusInfoBox" style="display:none;">
             <label>Bonus Iliyopo</label>
@@ -91,18 +102,11 @@
               <span id="bonusCurrentAmount">TZS 0</span>
             </div>
           </div>
-          <div id="balanceUsedBox" style="display:none;">
-            <label for="balanceAmountUsed">Kiasi kutoka Balance ya Supervisor</label>
-            <input type="text" inputmode="numeric" id="balanceAmountUsed" placeholder="Mfano: 50000">
-          </div>
           <div id="bonusUsedBox" style="display:none;">
-            <label for="bonusAmountUsed">Kiasi kutoka Bonus</label>
+            <label for="bonusAmountUsed">Kiasi cha Bonus</label>
             <input type="text" inputmode="numeric" id="bonusAmountUsed" placeholder="Mfano: 20000">
           </div>
-          <div>
-            <label for="amountPaid">Fedha Taslimu (Paid)</label>
-            <input type="text" inputmode="numeric" id="amountPaid" min="0" >
-          </div>
+
           <div>
             <label for="balance">Balance</label>
             <input type="text" id="balance" readonly value="0">
@@ -114,33 +118,6 @@
         </div>
         <button class="submit-btn" id="submitSaleBtn">Save  Data</button>
         <p class="status-msg" id="saleStatusMsg"></p>
-      </div>
-
-      <div class="card">
-        <h2>Hamisha Balance ya Mteja kwenda kwako</h2>
-        <div class="form-grid">
-          <div>
-            <label for="transferCustomerName">Jina la Mteja (hiari)</label>
-            <input type="text" id="transferCustomerName">
-          </div>
-          <div>
-            <label>Balance ya Mteja Huyu</label>
-            <div class="credit-check-row">
-              <span id="transferCustomerBalanceDisplay">TZS 0</span>
-              <button type="button" id="transferCheckBalanceBtn">View</button>
-            </div>
-          </div>
-          <div>
-            <label for="transferAmount">Kiasi cha Kuhamisha</label>
-            <input type="number" id="transferAmount" min="0">
-          </div>
-          <div>
-            <label for="transferReason">Sababu (hiari)</label>
-            <input type="text" id="transferReason" placeholder="Mfano: kuhamishia kwenye mfuko wa jumla">
-          </div>
-        </div>
-        <button class="submit-btn" id="transferSubmitBtn">Hamisha</button>
-        <p class="status-msg" id="transferStatusMsg"></p>
       </div>
 
       <div class="card">
@@ -204,10 +181,6 @@
         </div>
 
         <div class="balance-summary">
-          <div class="balance-box">
-            <div class="label">Balance ya Supervisor</div>
-            <div class="value" id="supPoolBalanceDisplay">TZS 0</div>
-          </div>
           <div class="balance-box final">
             <div class="label">BALANCE KUU (Baada ya Matumizi)</div>
             <div class="value" id="supBalanceKuu">TZS 0</div>
