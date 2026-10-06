@@ -74,8 +74,8 @@
             <label for="paymentSource">Chanzo cha Malipo</label>
             <select id="paymentSource">
               <option value="cash">Fedha Taslimu</option>
-              <option value="balance">Balance ya Supervisor</option>
-              <option value="combo">Fedha Taslimu + Balance ya Supervisor</option>
+              <option value="cash_balance_bonus">Fedha Taslimu + Balance + Bonus</option>
+              <option value="cash_balance">Fedha Taslimu + Balance</option>
             </select>
           </div>
           <div id="balanceInfoBox" style="display:none;">
@@ -84,12 +84,22 @@
               <span id="balCurrentAmount">TZS 0</span>
             </div>
           </div>
-          <div id="comboAmountBox" style="display:none;">
+          <div id="bonusInfoBox" style="display:none;">
+            <label>Bonus Iliyopo</label>
+            <div class="credit-check-row">
+              <span id="bonusCurrentAmount">TZS 0</span>
+            </div>
+          </div>
+          <div id="balanceUsedBox" style="display:none;">
             <label for="balanceAmountUsed">Kiasi kutoka Balance ya Supervisor</label>
             <input type="text" inputmode="numeric" id="balanceAmountUsed" placeholder="Mfano: 50000">
           </div>
+          <div id="bonusUsedBox" style="display:none;">
+            <label for="bonusAmountUsed">Kiasi kutoka Bonus</label>
+            <input type="text" inputmode="numeric" id="bonusAmountUsed" placeholder="Mfano: 20000">
+          </div>
           <div>
-            <label for="amountPaid">Paid</label>
+            <label for="amountPaid">Fedha Taslimu (Paid)</label>
             <input type="text" inputmode="numeric" id="amountPaid" min="0" >
           </div>
           <div>
@@ -109,7 +119,7 @@
         <h2>Hamisha Balance ya Mteja kwenda kwako</h2>
         <div class="form-grid">
           <div>
-            <label for="transferCustomerName">Jina la Mteja</label>
+            <label for="transferCustomerName">Jina la Mteja (hiari)</label>
             <input type="text" id="transferCustomerName">
           </div>
           <div>
